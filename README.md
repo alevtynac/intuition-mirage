@@ -42,16 +42,18 @@ An interactive art and poetry experience where intuition guides image selection,
 ## Installation
 
 1. Open VS Code or another IDE (VS Code is recommended option)
+   
 2. Add working folder by cloning GitHub repository using this link:<br>
 `https://github.com/alevtynac/intuition-mirage`
+
 3. Install Python dependencies by running the command below in Terminal Window into VS Code:
 ```bash
 pip install -r requirements.txt
 ```
 
-2. Ensure you have PNG images in the `images/` directory (numbered 1.png through 80.png)
+4. Ensure you have PNG images in the `images/` directory (numbered 1.png through 80.png)
 
-3. Ensure audio files are in the `audio/` directory:
+5. Ensure audio files are in the `audio/` directory:
    - `ambience.mpeg` - Background ambient sound
    - `mouse-click.mpeg` - Click sound effect
 
