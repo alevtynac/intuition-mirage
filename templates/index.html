@@ -1,0 +1,2283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Intuition Mirage</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet" />
+
+  <style>
+    * { box-sizing: border-box; }
+
+    html, body { height: 100%; }
+
+    body {
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100dvh;
+      background:
+        linear-gradient(90deg, rgba(208, 208, 208, 0.3) 1px, transparent 1px),
+        linear-gradient(rgba(208, 208, 208, 0.3) 1px, transparent 1px);
+      background-size: 16px 16px;
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+    }
+
+    #outerFrame {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      padding: 0;
+      max-width: 100vw;
+      width: 100%;
+    }
+
+    #windowFrame {
+      background: transparent;
+      border: none;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      max-width: 100%;
+      width: 100%;
+    }
+
+    #windowTitleBar {
+      display: none;
+    }
+
+    #windowTitle { letter-spacing: 1px; }
+
+    .windowControls span {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-left: 4px;
+      border: 2px solid #fff;
+    }
+
+    #windowContent {
+      background: transparent;
+      border: none;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+    }
+
+    #gameContainer {
+      text-align: center;
+      position: relative;
+      width: min(1820px, calc(100vw - 64px));
+    }
+
+    canvas {
+      display: block;
+      border: none;
+      background-color: transparent;
+      width: 100%;
+      height: auto;
+      cursor: default; /* Standard pointer on splash screen */
+    }
+    
+    canvas.game-started {
+      cursor: none; /* Hide default cursor during game - we draw custom cursor */
+    }
+
+    #statusBar {
+      display: none;
+    }
+
+    #statusLeft, #statusRight { white-space: nowrap; }
+    #statusCenter { text-align: center; flex: 1; }
+
+    #nameOverlay {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 0, 0, 0.65);
+      z-index: 1000;
+    }
+
+    #nameOverlayInner {
+      border: 4px solid #000;
+      padding: 18px 24px;
+      background: #f8f8f8;
+      box-shadow: 0 0 0 4px #7b7b7b;
+    }
+
+    #nameOverlayInner label {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 12px;
+    }
+
+    #playerNameInput {
+      padding: 6px 8px;
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+      font-size: 12px;
+      border: 2px solid #000;
+      width: 220px;
+      margin-bottom: 10px;
+      background: #fff;
+    }
+
+    #nameSubmitBtn {
+      padding: 6px 12px;
+      font-family: 'Press Start 2P', 'Courier New', monospace;
+      font-size: 12px;
+      border: 2px solid #000;
+      background: #000;
+      color: #fff;
+      cursor: pointer;
+    }
+
+    #nameSubmitBtn:hover { background: #222; }
+
+    /* Audio control button */
+    #audioControl {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      width: 40px;
+      height: 40px;
+      background: transparent;
+      border: 2px solid #000;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      font-size: 20px;
+      padding: 0;
+    }
+
+    #audioControl:hover {
+      background: rgba(0, 0, 0, 0.1);
+    }
+
+    #audioControl.muted {
+      opacity: 0.5;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Audio elements -->
+  <audio id="ambienceAudio" loop>
+    <source src="/audio/ambience.mpeg" type="audio/mpeg">
+  </audio>
+  <audio id="clickAudio">
+    <source src="/audio/mouse-click.mpeg" type="audio/mpeg">
+  </audio>
+  
+  <!-- Audio control button -->
+  <button id="audioControl" title="Mute/Unmute">
+    🔊
+  </button>
+  <div id="outerFrame">
+    <div id="windowFrame">
+      <div id="windowTitleBar">
+        <div id="windowTitle">INTUITION MIRAGE</div>
+        <div class="windowControls">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+
+      <div id="windowContent">
+        <div id="gameContainer">
+          <canvas id="gameCanvas" width="1820" height="750"></canvas>
+
+        </div>
+      </div>
+
+      <div id="statusBar">
+        <div id="statusLeft">ARROW → START&nbsp;&nbsp;•&nbsp;&nbsp;CLICK TO SELECT</div>
+        <div id="statusCenter">CHOOSE 1 PHOTO EACH TURN</div>
+        <div id="statusRight">SESSION: <span id="sessionIdDisplay">---</span>&nbsp;&nbsp;•&nbsp;&nbsp;BUILD: 2.0.0</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================
+    // Game state
+    // =========================
+    let gameId = null;
+    let gameState = null;
+    let gameStarted = false;
+    let endAnimation = false;
+    let welcomeAnimationFrame = 0;
+    let showRevelation = false; // Track if we're showing the final revelation screen
+    let revelationAnimationFrame = 0; // Track animation frame for revelation screen
+    let frameCount = 0;
+
+    // Audio elements
+    const ambienceAudio = document.getElementById('ambienceAudio');
+    const clickAudio = document.getElementById('clickAudio');
+    const audioControl = document.getElementById('audioControl');
+    
+    // Audio settings
+    let isMuted = false;
+    ambienceAudio.volume = 0.3; // Lower volume for ambience
+    clickAudio.volume = 0.8; // Louder volume for clicks
+    
+    // Start ambience audio on page load (looped)
+    ambienceAudio.loop = true;
+    ambienceAudio.play().catch(e => {
+      console.log('Audio autoplay prevented, will play on user interaction:', e);
+    });
+    
+    // Mute/unmute control
+    audioControl.addEventListener('click', () => {
+      playClickSound(); // Play click sound when toggling
+      isMuted = !isMuted;
+      if (isMuted) {
+        ambienceAudio.pause();
+        audioControl.textContent = '🔇';
+        audioControl.classList.add('muted');
+      } else {
+        ambienceAudio.play().catch(e => console.log('Audio play error:', e));
+        audioControl.textContent = '🔊';
+        audioControl.classList.remove('muted');
+      }
+    });
+    
+    // Start audio on first user interaction (if autoplay was blocked)
+    let audioStarted = false;
+    function startAudioOnInteraction() {
+      if (!audioStarted && !isMuted) {
+        ambienceAudio.play().catch(e => console.log('Audio play error:', e));
+        audioStarted = true;
+      }
+    }
+    
+    // Try to start audio on various user interactions
+    document.addEventListener('click', startAudioOnInteraction, { once: true });
+    document.addEventListener('keydown', startAudioOnInteraction, { once: true });
+    document.addEventListener('touchstart', startAudioOnInteraction, { once: true });
+    
+    // Function to play click sound
+    function playClickSound() {
+      if (!isMuted && clickAudio) {
+        clickAudio.currentTime = 0; // Reset to start
+        clickAudio.play().catch(e => console.log('Click sound error:', e));
+      }
+    }
+
+    // Collage data
+    let humanCollage = [];
+    
+    // Random gradient colors for Intuition World (generated per game)
+    let intuitionWorldGradientColors = null;
+    
+    // Generate random gradient colors with diverse color combinations
+    function generateRandomPastelGradient() {
+      // Diverse color palettes - pastels, vibrant, dark, earth tones, etc.
+      const colorPalettes = [
+        // PASTEL TONES
+        // Periwinkle to Pink to Peach
+        [
+          { r: 200, g: 190, b: 230 }, // Periwinkle blue
+          { r: 220, g: 180, b: 220 }, // Lavender
+          { r: 240, g: 200, b: 220 }, // Soft pink
+          { r: 255, g: 220, b: 200 }, // Light peach
+          { r: 255, g: 240, b: 210 }  // Warm yellow
+        ],
+        // Sky Blue to Mint to Coral
+        [
+          { r: 180, g: 220, b: 240 }, // Sky blue
+          { r: 200, g: 240, b: 230 }, // Mint green
+          { r: 250, g: 220, b: 210 }, // Soft coral
+          { r: 255, g: 230, b: 200 }, // Peach
+          { r: 255, g: 245, b: 220 }  // Cream
+        ],
+        
+        // VIBRANT COLORS
+        // Electric Blue to Magenta to Orange
+        [
+          { r: 50, g: 150, b: 255 },  // Electric blue
+          { r: 100, g: 100, b: 255 }, // Royal blue
+          { r: 200, g: 50, b: 255 },  // Magenta
+          { r: 255, g: 100, b: 200 }, // Hot pink
+          { r: 255, g: 150, b: 100 }  // Orange
+        ],
+        // Cyan to Purple to Yellow
+        [
+          { r: 0, g: 200, b: 255 },   // Cyan
+          { r: 100, g: 150, b: 255 }, // Light blue
+          { r: 150, g: 100, b: 255 }, // Purple
+          { r: 255, g: 100, b: 200 }, // Pink
+          { r: 255, g: 220, b: 50 }   // Yellow
+        ],
+        // Red to Orange to Yellow
+        [
+          { r: 255, g: 50, b: 50 },   // Red
+          { r: 255, g: 100, b: 50 },  // Orange-red
+          { r: 255, g: 150, b: 50 },  // Orange
+          { r: 255, g: 200, b: 50 },  // Yellow-orange
+          { r: 255, g: 240, b: 80 }   // Yellow
+        ],
+        
+        // DARK/MOODY TONES
+        // Deep Blue to Purple to Dark Pink
+        [
+          { r: 20, g: 30, b: 80 },    // Deep blue
+          { r: 40, g: 20, b: 100 },   // Dark purple
+          { r: 80, g: 20, b: 120 },   // Purple
+          { r: 120, g: 30, b: 100 },  // Dark pink
+          { r: 150, g: 50, b: 80 }    // Deep rose
+        ],
+        // Navy to Teal to Emerald
+        [
+          { r: 10, g: 30, b: 60 },    // Navy
+          { r: 20, g: 80, b: 100 },   // Dark teal
+          { r: 30, g: 120, b: 130 },  // Teal
+          { r: 50, g: 150, b: 140 },  // Turquoise
+          { r: 80, g: 180, b: 150 }   // Emerald
+        ],
+        // Dark Purple to Burgundy to Deep Red
+        [
+          { r: 40, g: 20, b: 60 },    // Dark purple
+          { r: 60, g: 20, b: 50 },    // Deep purple
+          { r: 100, g: 20, b: 40 },   // Burgundy
+          { r: 140, g: 30, b: 50 },   // Deep red
+          { r: 180, g: 50, b: 60 }    // Dark red
+        ],
+        
+        // EARTH TONES
+        // Forest Green to Brown to Terracotta
+        [
+          { r: 30, g: 80, b: 40 },    // Forest green
+          { r: 60, g: 100, b: 50 },   // Olive
+          { r: 100, g: 120, b: 60 },  // Khaki
+          { r: 140, g: 100, b: 60 },  // Brown
+          { r: 180, g: 100, b: 70 }   // Terracotta
+        ],
+        // Sand to Rust to Burnt Orange
+        [
+          { r: 240, g: 220, b: 180 }, // Sand
+          { r: 220, g: 180, b: 140 }, // Beige
+          { r: 200, g: 140, b: 100 }, // Tan
+          { r: 180, g: 100, b: 60 },  // Rust
+          { r: 200, g: 80, b: 40 }    // Burnt orange
+        ],
+        // Sage to Olive to Moss
+        [
+          { r: 180, g: 200, b: 160 }, // Sage
+          { r: 140, g: 160, b: 120 }, // Olive
+          { r: 100, g: 140, b: 100 }, // Moss
+          { r: 80, g: 120, b: 80 },   // Forest
+          { r: 100, g: 140, b: 100 }  // Moss
+        ],
+        
+        // COOL TONES
+        // Ice Blue to Mint to Aqua
+        [
+          { r: 200, g: 240, b: 255 }, // Ice blue
+          { r: 150, g: 230, b: 250 }, // Light blue
+          { r: 100, g: 220, b: 240 }, // Sky blue
+          { r: 80, g: 200, b: 220 },  // Aqua
+          { r: 100, g: 220, b: 200 }  // Mint
+        ],
+        // Slate to Steel to Silver
+        [
+          { r: 100, g: 120, b: 140 }, // Slate
+          { r: 120, g: 140, b: 160 }, // Steel blue
+          { r: 140, g: 160, b: 180 }, // Light steel
+          { r: 160, g: 180, b: 200 }, // Silver blue
+          { r: 180, g: 200, b: 220 }  // Silver
+        ],
+        
+        // WARM TONES
+        // Cream to Peach to Coral
+        [
+          { r: 255, g: 250, b: 240 }, // Cream
+          { r: 255, g: 240, b: 220 }, // Light peach
+          { r: 255, g: 220, b: 200 }, // Peach
+          { r: 255, g: 200, b: 180 }, // Coral
+          { r: 255, g: 180, b: 160 }  // Deep coral
+        ],
+        // Gold to Amber to Orange
+        [
+          { r: 255, g: 220, b: 100 }, // Gold
+          { r: 255, g: 200, b: 80 },  // Amber
+          { r: 255, g: 180, b: 60 },  // Orange
+          { r: 255, g: 150, b: 50 },  // Deep orange
+          { r: 240, g: 120, b: 40 }   // Burnt orange
+        ],
+        
+        // SUNSET/SUNRISE
+        // Pink to Orange to Yellow
+        [
+          { r: 255, g: 180, b: 200 }, // Pink
+          { r: 255, g: 150, b: 150 }, // Rose
+          { r: 255, g: 120, b: 100 }, // Coral
+          { r: 255, g: 150, b: 80 },  // Orange
+          { r: 255, g: 200, b: 100 }  // Yellow
+        ],
+        // Purple to Pink to Orange
+        [
+          { r: 150, g: 100, b: 200 }, // Purple
+          { r: 200, g: 100, b: 200 }, // Magenta
+          { r: 255, g: 120, b: 200 }, // Hot pink
+          { r: 255, g: 150, b: 150 }, // Pink-orange
+          { r: 255, g: 180, b: 100 }  // Orange
+        ],
+        
+        // OCEAN/UNDERWATER
+        // Deep Blue to Cyan to Teal
+        [
+          { r: 20, g: 60, b: 100 },   // Deep blue
+          { r: 40, g: 100, b: 150 },  // Ocean blue
+          { r: 60, g: 150, b: 200 },  // Cyan
+          { r: 80, g: 180, b: 200 },  // Light cyan
+          { r: 100, g: 200, b: 200 }  // Teal
+        ],
+        
+        // FOREST/NATURE
+        // Dark Green to Lime to Yellow
+        [
+          { r: 40, g: 80, b: 40 },    // Dark green
+          { r: 60, g: 120, b: 60 },   // Green
+          { r: 100, g: 180, b: 100 }, // Light green
+          { r: 150, g: 220, b: 120 }, // Lime
+          { r: 200, g: 240, b: 150 }  // Yellow-green
+        ],
+        
+        // NEON/VIBRANT
+        // Neon Blue to Neon Green to Neon Yellow
+        [
+          { r: 0, g: 200, b: 255 },   // Neon blue
+          { r: 0, g: 255, b: 200 },    // Neon cyan
+          { r: 0, g: 255, b: 150 },    // Neon green
+          { r: 100, g: 255, b: 100 },  // Bright green
+          { r: 200, g: 255, b: 0 }     // Neon yellow
+        ],
+        
+        // MONOCHROME
+        // Gray to White
+        [
+          { r: 80, g: 80, b: 100 },   // Dark gray
+          { r: 120, g: 120, b: 140 },  // Gray
+          { r: 160, g: 160, b: 180 },  // Light gray
+          { r: 200, g: 200, b: 220 },  // Very light gray
+          { r: 240, g: 240, b: 250 }   // Off-white
+        ],
+        
+        // DUSK/NIGHT
+        // Deep Purple to Blue to Black
+        [
+          { r: 60, g: 40, b: 100 },   // Deep purple
+          { r: 80, g: 60, b: 120 },   // Purple
+          { r: 60, g: 80, b: 140 },   // Blue-purple
+          { r: 40, g: 60, b: 100 },   // Deep blue
+          { r: 20, g: 30, b: 60 }     // Near black
+        ]
+      ];
+      
+      // Randomly select a palette
+      const selectedPalette = colorPalettes[Math.floor(Math.random() * colorPalettes.length)];
+      
+      // Create gradient with 5-7 color stops for smooth transitions
+      const numStops = 5 + Math.floor(Math.random() * 3); // 5-7 stops
+      const colors = [];
+      
+      for (let i = 0; i < numStops; i++) {
+        const progress = i / (numStops - 1);
+        // Interpolate between palette colors
+        const colorIndex = progress * (selectedPalette.length - 1);
+        const lowerIndex = Math.floor(colorIndex);
+        const upperIndex = Math.min(Math.ceil(colorIndex), selectedPalette.length - 1);
+        const t = colorIndex - lowerIndex;
+        
+        const lowerColor = selectedPalette[lowerIndex];
+        const upperColor = selectedPalette[upperIndex];
+        
+        colors.push({
+          r: Math.round(lowerColor.r + (upperColor.r - lowerColor.r) * t),
+          g: Math.round(lowerColor.g + (upperColor.g - lowerColor.g) * t),
+          b: Math.round(lowerColor.b + (upperColor.b - lowerColor.b) * t),
+          stop: progress
+        });
+      }
+      
+      return colors;
+    }
+
+    // Image cache
+    const imageCache = new Map();
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const photoSize = 80;
+    const BASE_W = 1820;
+    const BASE_H = 750;
+
+    let width = BASE_W;
+    let height = BASE_H;
+
+    // =========================
+    // Image loading
+    // =========================
+    function loadImage(filename) {
+      return new Promise((resolve, reject) => {
+        if (imageCache.has(filename)) {
+          resolve(imageCache.get(filename));
+          return;
+        }
+
+        const img = new Image();
+        img.onload = () => {
+          // Verify PNG image loaded correctly with valid dimensions
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            imageCache.set(filename, img);
+            resolve(img);
+          } else {
+            console.warn(`PNG image ${filename} loaded but has invalid dimensions`);
+            imageCache.set(filename, null);
+            resolve(null);
+          }
+        };
+        img.onerror = (error) => {
+          // If PNG image fails to load, cache null to prevent repeated attempts
+          console.error(`Failed to load PNG image: ${filename}`, error);
+          imageCache.set(filename, null);
+          resolve(null);
+        };
+        // Load PNG files - ensure proper MIME type handling
+        img.src = `/images/${filename}`;
+      });
+    }
+
+    async function preloadImages(photoIds) {
+      // Filter out already cached and ready images
+      const toLoad = photoIds.filter(id => {
+        const img = imageCache.get(id);
+        return !img || !img.complete || img.naturalWidth === 0 || img.naturalHeight === 0;
+      });
+      
+      if (toLoad.length === 0) return; // All images already ready
+      
+      const loadPromises = toLoad.map(photoId => loadImage(photoId));
+      await Promise.all(loadPromises);
+      
+      // Double-check all images are ready
+      for (const photoId of photoIds) {
+        const img = imageCache.get(photoId);
+        if (!img || !img.complete || img.naturalWidth === 0 || img.naturalHeight === 0) {
+          // Wait a frame for browser to finish loading
+          await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+      }
+    }
+
+    // =========================
+    // Responsive + Retina canvas
+    // =========================
+    function resizeCanvas() {
+      const cssW = canvas.clientWidth || BASE_W;
+      const cssH = Math.round(cssW * (BASE_H / BASE_W));
+      canvas.style.height = cssH + 'px';
+
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      width = cssW;
+      height = cssH;
+    }
+
+    window.addEventListener('resize', resizeCanvas);
+
+    // =========================
+    // Name overlay
+    // =========================
+    // Player name functions removed - no longer needed
+
+    // =========================
+    // Server API
+    // =========================
+    async function initGame() {
+      try {
+        const response = await fetch('/api/game/new', { method: 'POST' });
+        const data = await response.json();
+        gameId = data.game_id;
+
+        const sessionDisplay = document.getElementById('sessionIdDisplay');
+        if (sessionDisplay) sessionDisplay.textContent = gameId;
+
+        await updateGameState();
+        // Don't call gameLoop() here - it's already running via requestAnimationFrame
+        // The loop will automatically pick up the new game state
+      } catch (error) {
+        console.error('Error initializing game:', error);
+      }
+    }
+
+    async function updateGameState() {
+      if (!gameId) return;
+
+      try {
+        const response = await fetch(`/api/game/${gameId}/state`);
+        gameState = await response.json();
+        gameStarted = gameState.game_started;
+        endAnimation = gameState.game_complete;
+
+        // Preload images for current options
+        if (gameState.human_current_options) {
+          const allPhotoIds = gameState.human_current_options.map(o => o.photo_id);
+          await preloadImages(allPhotoIds);
+        }
+
+        if (endAnimation && gameState.game_complete) {
+          await loadCollages();
+          // Preload collage images
+          const collagePhotoIds = humanCollage.map(item => item.photo_id);
+          await preloadImages(collagePhotoIds);
+        }
+      } catch (error) {
+        console.error('Error updating game state:', error);
+      }
+    }
+
+    async function loadCollages() {
+      if (!gameId) return;
+
+      try {
+        const [collageRes, worldRes] = await Promise.all([
+          fetch(`/api/game/${gameId}/collage`),
+          fetch(`/api/game/${gameId}/intuition-world`)
+        ]);
+        
+        humanCollage = (await collageRes.json()).collage || [];
+        intuitionWorldData = await worldRes.json();
+        dominantColor = intuitionWorldData.dominant_color || { r: 150, g: 150, b: 150 };
+        
+        // Reset image configs and gradient so they're recalculated with new data
+        intuitionWorldImageConfigs = null;
+        intuitionWorldGradientColors = null; // Reset gradient for new game
+      } catch (error) {
+        console.error('Error loading collages:', error);
+      }
+    }
+
+    async function startGame() {
+      if (!gameId || gameStarted) return;
+
+      try {
+        await fetch(`/api/game/${gameId}/start`, { method: 'POST' });
+        gameStarted = true;
+        // Add class to hide default cursor during game
+        canvas.classList.add('game-started');
+      } catch (error) {
+        console.error('Error starting game:', error);
+      }
+    }
+
+    async function handlePhotoSelection(photoId) {
+      if (!gameId || !gameStarted || endAnimation) {
+        console.log('Selection blocked:', { gameId, gameStarted, endAnimation });
+        return;
+      }
+
+      // Play click sound
+      playClickSound();
+
+      console.log('Handling photo selection:', photoId);
+      try {
+        const response = await fetch(`/api/game/${gameId}/select`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ photo_id: photoId })
+        });
+        const data = await response.json();
+        console.log('Selection response:', data);
+        if (data.success) {
+          // Preload images for new options BEFORE updating gameState to prevent flickering
+          if (data.state.human_current_options) {
+            const allPhotoIds = data.state.human_current_options.map(o => o.photo_id);
+            // Wait for images to preload and verify they're ready
+            await preloadImages(allPhotoIds);
+            // Wait one more frame to ensure browser has finished rendering preparation
+            await new Promise(resolve => requestAnimationFrame(resolve));
+          }
+          
+          // Update state only after images are confirmed ready
+          gameState = data.state;
+          console.log('Game state updated:', gameState);
+          if (gameState.game_complete) {
+            await loadCollages();
+          }
+        } else {
+          console.error('Selection failed:', data);
+        }
+      } catch (error) {
+        console.error('Error handling selection:', error);
+      }
+    }
+
+
+    // =========================
+    // Helpers
+    // =========================
+    function scaleX(x) { return x * (width / BASE_W); }
+    function scaleY(y) { return y * (height / BASE_H); }
+    
+    function constrainPositionToBoundaries(x, y, img, side) {
+      if (!img || !img.complete || img.naturalWidth <= 0) {
+        return { x, y };
+      }
+      
+      // Calculate dimensions at 1/2 size in canvas coordinates
+      const scaleFactor = (1/2) * (width / BASE_W);
+      const imgWidth = img.naturalWidth * scaleFactor;
+      const imgHeight = img.naturalHeight * scaleFactor;
+      
+      // Margins to prevent border overflow
+      const topMargin = 100 * (height / BASE_H);
+      const bottomMargin = height - 80 * (height / BASE_H);
+      const sideMargin = 60 * (width / BASE_W);
+      const centerX = width / 2;
+      
+      let constrainedX = x;
+      let constrainedY = y;
+      
+      if (side === 'human') {
+        const leftBound = sideMargin;
+        const rightBound = centerX - sideMargin;
+        const minX = leftBound + imgWidth / 2;
+        const maxX = rightBound - imgWidth / 2;
+        
+        if (minX > maxX) {
+          constrainedX = (leftBound + rightBound) / 2;
+        } else {
+          constrainedX = Math.max(minX, Math.min(maxX, constrainedX));
+        }
+      } else {
+        const leftBound = centerX + sideMargin;
+        const rightBound = width - sideMargin;
+        const minX = leftBound + imgWidth / 2;
+        const maxX = rightBound - imgWidth / 2;
+        
+        if (minX > maxX) {
+          constrainedX = (leftBound + rightBound) / 2;
+        } else {
+          constrainedX = Math.max(minX, Math.min(maxX, constrainedX));
+        }
+      }
+      
+      const minY = topMargin + imgHeight / 2;
+      const maxY = bottomMargin - imgHeight / 2;
+      
+      if (minY > maxY) {
+        constrainedY = (topMargin + bottomMargin) / 2;
+      } else {
+        constrainedY = Math.max(minY, Math.min(maxY, constrainedY));
+      }
+      
+      return { x: constrainedX, y: constrainedY };
+    }
+    
+    function ensureNonOverlappingPositions(option1, option2, side) {
+      // Get both images
+      const img1 = imageCache.get(option1.photo_id);
+      const img2 = imageCache.get(option2.photo_id);
+      
+      if (!img1 || !img1.complete || !img2 || !img2.complete) {
+        return; // Can't check overlap if images aren't loaded
+      }
+      
+      // Constrain both positions first
+      let pos1 = constrainPositionToBoundaries(
+        scaleX(option1.x), 
+        scaleY(option1.y), 
+        img1, 
+        side
+      );
+      let pos2 = constrainPositionToBoundaries(
+        scaleX(option2.x), 
+        scaleY(option2.y), 
+        img2, 
+        side
+      );
+      
+      // Calculate dimensions at 1/2 size
+      const scaleFactor = (1/2) * (width / BASE_W);
+      const width1 = img1.naturalWidth * scaleFactor;
+      const height1 = img1.naturalHeight * scaleFactor;
+      const width2 = img2.naturalWidth * scaleFactor;
+      const height2 = img2.naturalHeight * scaleFactor;
+      
+      // Calculate bounding boxes
+      const box1 = {
+        left: pos1.x - width1 / 2,
+        right: pos1.x + width1 / 2,
+        top: pos1.y - height1 / 2,
+        bottom: pos1.y + height1 / 2
+      };
+      
+      const box2 = {
+        left: pos2.x - width2 / 2,
+        right: pos2.x + width2 / 2,
+        top: pos2.y - height2 / 2,
+        bottom: pos2.y + height2 / 2
+      };
+      
+      // Check if boxes overlap
+      const overlapX = box1.right > box2.left && box1.left < box2.right;
+      const overlapY = box1.bottom > box2.top && box1.top < box2.bottom;
+      
+      if (overlapX && overlapY) {
+        // Images overlap - separate them
+        const maxSize = Math.max(
+          Math.max(width1, height1),
+          Math.max(width2, height2)
+        );
+        const minDistance = maxSize + 50 * (width / BASE_W);
+        
+        // Calculate distance between centers
+        const distance = Math.sqrt((pos2.x - pos1.x)**2 + (pos2.y - pos1.y)**2);
+        
+        if (distance < minDistance) {
+          // Move them apart
+          const angle = Math.atan2(pos2.y - pos1.y, pos2.x - pos1.x);
+          const newDistance = minDistance;
+          
+          // Keep first position, move second
+          pos2.x = pos1.x + Math.cos(angle) * newDistance;
+          pos2.y = pos1.y + Math.sin(angle) * newDistance;
+          
+          // Re-constrain after moving
+          pos2 = constrainPositionToBoundaries(pos2.x, pos2.y, img2, side);
+          
+          // Update option2 position back to base coordinates
+          option2.x = (pos2.x / (width / BASE_W));
+          option2.y = (pos2.y / (height / BASE_H));
+        }
+      }
+      
+      // Update option positions back to base coordinates
+      option1.x = (pos1.x / (width / BASE_W));
+      option1.y = (pos1.y / (height / BASE_H));
+    }
+
+    // =========================
+    // Drawing
+    // =========================
+    function drawSplashScreen() {
+      // Transparent background - grid shows through
+      welcomeAnimationFrame++;
+      
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      const titleSize = Math.max(28, Math.min(48, Math.floor(width / 40)));
+      const textSize = Math.max(10, Math.min(18, Math.floor(width / 120)));
+      const promptSize = Math.max(8, Math.min(14, Math.floor(width / 150)));
+
+      const centerX = width / 2;
+      const centerY = height / 2;
+
+      // 1. Draw title "Intuition Mirage" in the center
+      ctx.font = `${titleSize}px "Press Start 2P", monospace`;
+      ctx.fillText('INTUITION MIRAGE', centerX, centerY - 100);
+
+      // 2. Draw text below with typewriter effect (3 lines)
+      const fullText = "Logic is powerless here. Choose the image that resonates with the phrase below.\nYour intuition will build an automatic collage, and AI will transform\nyour choices into a poem that will help understand your intuition";
+      const lines = fullText.split('\n');
+      
+      // Typewriter effect: show characters progressively (very slow for realism)
+      const charsPerFrame = 0.15; // Very slow typing speed
+      const totalChars = fullText.replace(/\n/g, '').length;
+      const currentChars = Math.min(totalChars, Math.floor(welcomeAnimationFrame * charsPerFrame));
+      
+      // Calculate which line and character we're on (including newlines in count)
+      let charsShown = 0;
+      let displayText = '';
+      
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        const lineLength = line.length;
+        
+        if (charsShown + lineLength <= currentChars) {
+          // Whole line is shown
+          displayText += line;
+          if (lineIndex < lines.length - 1) {
+            displayText += '\n';
+          }
+          charsShown += lineLength;
+        } else {
+          // Partial line - show only the characters that should be visible
+          const remainingChars = currentChars - charsShown;
+          if (remainingChars > 0) {
+            displayText += line.substring(0, remainingChars);
+          }
+          break;
+        }
+      }
+      
+      // Draw the text with typewriter effect
+      ctx.fillStyle = '#000000'; // Ensure text is black
+      ctx.font = `${textSize}px "Press Start 2P", monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const lineHeight = textSize * 1.5;
+      const textY = centerY + 20; // Position below title
+      
+      // Draw each line, even if partially complete
+      const displayLines = displayText.split('\n');
+      displayLines.forEach((line, index) => {
+        // Draw the line even if it's empty (to maintain spacing), but only if we've started typing
+        if (currentChars > 0 || index === 0) {
+          ctx.fillText(line || '', centerX, textY + (index * lineHeight));
+        }
+      });
+      
+      // 3. Draw "press → to continue" prompt only when text is complete (very slow blinking)
+      if (currentChars >= totalChars) {
+        const blink = Math.sin(frameCount * 0.04) * 0.5 + 0.5; // Very slow blink
+        ctx.fillStyle = `rgba(0, 0, 0, ${blink})`;
+        ctx.font = `${promptSize}px "Press Start 2P", monospace`;
+        ctx.fillText('press → to start', centerX, textY + lines.length * lineHeight + 30);
+        ctx.fillStyle = '#000000'; // Reset
+      }
+    }
+
+    // Tutorial removed - now part of welcome screen
+    function drawTutorial_OLD() {
+      // Transparent background - grid shows through
+      
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      tutorialAnimationFrame++;
+      
+      // Text sizes
+      const titleSize = Math.max(28, Math.min(48, Math.floor(width / 40)));
+      const textSize = Math.max(10, Math.min(18, Math.floor(width / 120)));
+      const promptSize = Math.max(8, Math.min(14, Math.floor(width / 150)));
+      
+      const centerX = width / 2;
+      const centerY = height / 2;
+      
+      // 1. Draw title "Beyond the Grid" in the center
+      ctx.font = `${titleSize}px "Press Start 2P", monospace`;
+      ctx.fillText('BEYOND THE GRID', centerX, centerY - 80);
+      
+      // 2. Draw text below with typewriter effect
+      const fullText = "Forget logic. Trust the whisper below.\nChoose the vision that feels right to build your 2D memory and a 3D projection of your hidden soul.";
+      const lines = fullText.split('\n');
+      
+      // Typewriter effect: show characters progressively
+      const charsPerFrame = 2; // Speed of typing
+      const totalChars = fullText.replace(/\n/g, '').length;
+      const currentChars = Math.min(totalChars, Math.floor(tutorialAnimationFrame / charsPerFrame));
+      
+      // Calculate which line and character we're on
+      let charsShown = 0;
+      let displayText = '';
+      
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        if (charsShown + line.length <= currentChars) {
+          // Whole line is shown
+          displayText += line;
+          if (lineIndex < lines.length - 1) {
+            displayText += '\n';
+          }
+          charsShown += line.length;
+        } else {
+          // Partial line
+          const remainingChars = currentChars - charsShown;
+          displayText += line.substring(0, remainingChars);
+          break;
+        }
+      }
+      
+      // Draw the text with typewriter effect
+      ctx.font = `${textSize}px "Press Start 2P", monospace`;
+      const lineHeight = textSize * 1.5;
+      const textY = centerY + 20;
+      
+      displayText.split('\n').forEach((line, index) => {
+        ctx.fillText(line, centerX, textY + (index * lineHeight));
+      });
+      
+      // 4. Draw "press → to continue" prompt at bottom (blinking)
+      if (currentChars >= totalChars) {
+        const blink = Math.sin(frameCount * 0.2) * 0.5 + 0.5;
+        ctx.fillStyle = `rgba(0, 0, 0, ${blink})`;
+        ctx.font = `${promptSize}px "Press Start 2P", monospace`;
+        ctx.fillText('press → to continue', centerX, height - 40);
+        ctx.fillStyle = '#000000'; // Reset
+      }
+      
+      // STEP 1: Appears from LEFT
+      if (tutorialStep >= 0) {
+        // Calculate longest text line width to position correctly
+        ctx.font = `${smallSize}px "Press Start 2P", monospace`;
+        const step1LongestLine = 'Choose between 2 images';
+        const step1TextWidth = ctx.measureText(step1LongestLine).width;
+        const step1X = -200 + (200 + sideMargin + step1TextWidth / 2) * step1Progress; // Slide in from left, equal spacing from left edge
+        const step1Y = centerY;
+        const alpha = step1Progress;
+        
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.textAlign = 'center';
+        // YOUR INPUT (bold) - moved up
+        ctx.font = `bold ${textSize}px "Press Start 2P", monospace`;
+        ctx.fillText('YOUR INPUT', step1X, step1Y - 180);
+        // Empty space/line
+        // Description text (3 lines)
+        ctx.font = `${smallSize}px "Press Start 2P", monospace`;
+        ctx.fillText('Choose between 2 images', step1X, step1Y - 140);
+        ctx.fillText('by clicking on them.', step1X, step1Y - 110);
+        ctx.fillText('15 selections available', step1X, step1Y - 80);
+        
+        // Animated photos (same size and Y position as Step 2) - more space below text
+        const photoSize = 130; // Same size as Step 2
+        const photoSpacing = 160; // More space between photos
+        const photo1X = step1X - photoSpacing / 2;
+        const photo2X = step1X + photoSpacing / 2;
+        const photoTop = centerY - 20; // Top Y, same as Step 2 and Step 3, more space below text
+        const photoY = photoTop + photoSize/2; // Center Y for drawing
+        const animOffset = Math.sin(tutorialAnimationFrame * 0.05) * 5; // Slower animation
+        
+        // Glow effect
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+        ctx.fillRect(photo1X - photoSize/2 + animOffset, photoTop, photoSize, photoSize);
+        ctx.fillRect(photo2X - photoSize/2 - animOffset, photoTop, photoSize, photoSize);
+        ctx.shadowBlur = 0;
+        
+        ctx.fillStyle = '#333333';
+        ctx.fillRect(photo1X - photoSize/2 + 5 + animOffset, photoTop + 5, photoSize - 10, photoSize - 10);
+        ctx.fillRect(photo2X - photoSize/2 + 5 - animOffset, photoTop + 5, photoSize - 10, photoSize - 10);
+        
+        // Cursor moves between the two photos (fixed animation logic)
+        const cursorCycle = (tutorialAnimationFrame * 0.03) % (Math.PI * 2); // Slower movement
+        const cursorProgress = (Math.sin(cursorCycle) + 1) / 2; // 0 to 1
+        const cursorX = photo1X + (photo2X - photo1X) * cursorProgress + animOffset;
+        const cursorY = photoTop + photoSize/2; // Center Y of photos
+        
+        ctx.fillStyle = '#000000';
+        ctx.font = '28px Arial';
+        ctx.fillText('●', cursorX, cursorY);
+        ctx.restore();
+      }
+      
+      // STEP 2: Appears in CENTER (fixed animation)
+      if (tutorialStep >= 1) {
+        const step2X = width / 2; // Centered, equal spacing from both edges
+        const step2Y = centerY;
+        const alpha = step2Alpha; // Use step2Alpha to prevent flickering
+        
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        
+        ctx.font = `${textSize}px "Press Start 2P", monospace`;
+        ctx.textAlign = 'center';
+        ctx.textAlign = 'center';
+        // AI INPUT (bold) - moved up
+        ctx.font = `bold ${textSize}px "Press Start 2P", monospace`;
+        ctx.fillText('AI INPUT', step2X, step2Y - 180);
+        // Empty space/line
+        // Description text (3 lines)
+        ctx.font = `${smallSize}px "Press Start 2P", monospace`;
+        ctx.fillText('AI performing selections', step2X, step2Y - 140);
+        ctx.fillText('by it\'s own. Same rules.', step2X, step2Y - 110);
+        ctx.fillText('15 selections as well', step2X, step2Y - 80);
+        
+        // Example photo (same Y position as Step 1 and Step 3) - more space below text
+        const photoSize = 130;
+        const animOffset = Math.sin(tutorialAnimationFrame * 0.05) * 5; // Same animation as Step 1
+        const photoLeft = step2X - photoSize/2 + animOffset;
+        const photoRight = step2X + photoSize/2 + animOffset;
+        const photoTop = centerY - 20; // Top of photo, same horizontal level as Step 1 and Step 3, more space below text
+        const photoBottom = photoTop + photoSize;
+        
+        // Draw the photo square with same style and animation as Step 1 (glow effect and border)
+        // Glow effect
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.shadowBlur = 25;
+        ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+        ctx.fillRect(step2X - photoSize/2 + animOffset, photoTop, photoSize, photoSize);
+        ctx.shadowBlur = 0;
+        
+        // Inner square with border (same style as Step 1)
+        ctx.fillStyle = '#333333';
+        ctx.fillRect(step2X - photoSize/2 + 5 + animOffset, photoTop + 5, photoSize - 10, photoSize - 10);
+        
+        // Animated AI cursor (slower movement, forward direction)
+        // Cursor moves in a circle around the photo, centered on the photo
+        const photoCenterY = photoTop + photoSize/2;
+        const cursorRadius = 80; // Distance from photo center
+        const cursorAngle = -tutorialAnimationFrame * 0.04; // Forward direction
+        const aiCursorX = step2X + animOffset + Math.sin(cursorAngle) * cursorRadius; // Include animOffset
+        const aiCursorY = photoCenterY + Math.cos(cursorAngle) * cursorRadius;
+        
+        // Draw cursor on top of the square
+        ctx.save();
+        ctx.translate(aiCursorX, aiCursorY);
+        ctx.rotate(-Math.PI / 2);
+        // Cursor stays black (drawn on top of square so it's visible)
+        ctx.fillStyle = '#000000';
+        ctx.font = '32px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('●', 0, 0);
+        ctx.restore();
+        
+        ctx.restore();
+      }
+      
+      // STEP 3: Appears from RIGHT
+      if (tutorialStep >= 2) {
+        // Calculate longest text line width to position correctly
+        ctx.font = `${smallSize}px "Press Start 2P", monospace`;
+        const step3LongestLine = 'choices made will be created';
+        const step3TextWidth = ctx.measureText(step3LongestLine).width;
+        const step3X = width + 200 - (200 + sideMargin + step3TextWidth / 2) * step3Progress; // Slide in from right, equal spacing from right edge
+        const step3Y = centerY;
+        const alpha = step3Progress;
+        
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.font = `${textSize}px "Press Start 2P", monospace`;
+        ctx.textAlign = 'center';
+        ctx.textAlign = 'center';
+        // FINAL RESULT (bold) - moved up
+        ctx.font = `bold ${textSize}px "Press Start 2P", monospace`;
+        ctx.fillText('FINAL RESULT', step3X, step3Y - 180);
+        // Empty space/line
+        // Description text (3 lines)
+        ctx.font = `${smallSize}px "Press Start 2P", monospace`;
+        ctx.fillText('Collage layout based on the', step3X, step3Y - 140);
+        ctx.fillText('choices made will be created', step3X, step3Y - 110);
+        ctx.fillText('Compare results!', step3X, step3Y - 80);
+        
+        // Animated collage grid (bigger, slower, same Y position as Step 1 and Step 2) - more space below text
+        const cellSize = 45; // Bigger cells
+        const gridWidth = 3 * cellSize; // 3 columns
+        const gridStartX = step3X - gridWidth / 2; // Center the grid under the text
+        const gridStartY = centerY - 20; // Same horizontal level as Step 1 and Step 2, more space below text
+        
+        // Wait for slide-in animation to complete (step3Progress >= 1, which is at frame 360)
+        const slideInCompleteFrame = 360; // 240 (start) + 120 (duration)
+        const buildDelay = 8; // Slower building animation
+        
+        for (let i = 0; i < 15; i++) {
+          const row = Math.floor(i / 3);
+          const col = i % 3;
+          const x = gridStartX + col * cellSize;
+          const y = gridStartY + row * cellSize;
+          
+          // Only start fill animation after slide-in is complete
+          if (tutorialAnimationFrame >= slideInCompleteFrame) {
+            const buildFrame = tutorialAnimationFrame - slideInCompleteFrame;
+            const delay = i * buildDelay;
+            
+            if (buildFrame > delay) {
+              const fillProgress = Math.min(1, (buildFrame - delay) / 20); // Slower fill animation
+              
+              // Glow effect (same as Step 1 and Step 2)
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+              ctx.shadowBlur = 25;
+              ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+              ctx.fillRect(x, y, cellSize, cellSize);
+              ctx.shadowBlur = 0;
+              
+              // Inner square with border (same style as Step 1 and Step 2)
+              ctx.fillStyle = `rgba(51, 51, 51, ${fillProgress})`;
+              ctx.fillRect(x + 5, y + 5, cellSize - 10, cellSize - 10);
+            } else {
+              // Draw outline before fill animation starts
+              ctx.strokeStyle = '#333333';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(x, y, cellSize, cellSize);
+            }
+          } else {
+            // Draw outline before slide-in completes
+            ctx.strokeStyle = '#333333';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, cellSize, cellSize);
+          }
+        }
+        ctx.restore();
+      }
+      
+      // Navigation text at bottom
+      ctx.textAlign = 'center';
+      ctx.font = `${smallSize}px "Press Start 2P", monospace`;
+      const blink = Math.sin(frameCount * 0.2) * 0.5 + 0.5; // Slower blink
+      ctx.fillStyle = `rgba(0, 0, 0, ${blink})`;
+      ctx.globalAlpha = 1;
+      
+      if (tutorialStep < 2) {
+        ctx.fillText('press → for next tutorial step', width / 2, height - 40);
+      } else {
+        ctx.fillText('press → to start game', width / 2, height - 40);
+      }
+    }
+
+    function drawPhoto(photoId, x, y, size, rotation = 0, isHovered = false, useOriginalSize = false) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rotation);
+
+      // Try to draw cached image (PNG files)
+      const img = imageCache.get(photoId);
+      
+      // Check if image is loaded and has valid PNG dimensions
+      if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+        let drawWidth, drawHeight;
+        
+        if (useOriginalSize) {
+          // Use original PNG image dimensions at 1/2 size (scale to canvas coordinates)
+          const scaleFactor = (1/2) * (width / BASE_W);
+          drawWidth = img.naturalWidth * scaleFactor;
+          drawHeight = img.naturalHeight * scaleFactor;
+        } else {
+          // Use provided size, maintain aspect ratio
+          const aspectRatio = img.naturalWidth / img.naturalHeight;
+          if (aspectRatio > 1) {
+            drawWidth = size;
+            drawHeight = size / aspectRatio;
+          } else {
+            drawWidth = size * aspectRatio;
+            drawHeight = size;
+          }
+        }
+        
+        // Scale up when hovered (1.15x = 15% bigger)
+        const hoverScale = isHovered ? 1.15 : 1.0;
+        drawWidth *= hoverScale;
+        drawHeight *= hoverScale;
+        
+        const rectX = -drawWidth / 2;
+        const rectY = -drawHeight / 2;
+        
+        // Add glow/shadow effect when hovered
+        if (isHovered) {
+          // Multiple shadow layers for glow effect
+          ctx.shadowBlur = 30;
+          ctx.shadowColor = 'rgba(255, 255, 255, 0.8)';
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          
+          // Draw glow layers
+          for (let i = 0; i < 3; i++) {
+            ctx.shadowBlur = 20 + i * 10;
+            ctx.shadowColor = `rgba(255, 255, 255, ${0.6 - i * 0.15})`;
+            ctx.globalAlpha = 0.3;
+            ctx.drawImage(img, rectX, rectY, drawWidth, drawHeight);
+          }
+          
+          // Reset shadow and alpha for main image
+          ctx.shadowBlur = 0;
+          ctx.shadowColor = 'transparent';
+          ctx.globalAlpha = 1.0;
+        }
+        
+        // Draw PNG image
+        ctx.drawImage(img, rectX, rectY, drawWidth, drawHeight);
+      } else {
+        // Fallback: draw placeholder if PNG image not loaded yet
+        const hoverScale = isHovered ? 1.15 : 1.0;
+        const scaledSize = size * hoverScale;
+        const rectX = -scaledSize / 2;
+        const rectY = -scaledSize / 2;
+        
+        // Add glow effect for placeholder when hovered
+        if (isHovered) {
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = 'rgba(255, 255, 255, 0.6)';
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+        }
+        
+        ctx.fillStyle = '#f0f0f0';
+        ctx.fillRect(rectX, rectY, scaledSize, scaledSize);
+        ctx.fillStyle = '#000000';
+        ctx.font = `${scaledSize * 0.4}px "Press Start 2P", monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('?', 0, 0);
+        
+        // Reset shadow
+        ctx.shadowBlur = 0;
+        ctx.shadowColor = 'transparent';
+        
+        // Try to load the PNG image in the background if not already loading
+        if (!imageCache.has(photoId)) {
+          loadImage(photoId);
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function drawPhotoOptions() {
+      if (!gameState || gameState.game_complete) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = mousePos.x - rect.left;
+      const mouseY = mousePos.y - rect.top;
+
+      // Draw clickable selection images at random positions
+      if (gameState.human_current_options && gameState.human_steps > 0) {
+        const thumbnailSize = 120; // Size for interaction
+        
+        // Find the lowest Y position to place prompt below
+        let lowestY = 0;
+        
+        gameState.human_current_options.forEach((option, index) => {
+          // Use the random position and size from backend
+          const x = scaleX(option.x);
+          const y = scaleY(option.y);
+          const randomSize = option.size || thumbnailSize; // Use stored random size
+          const img = imageCache.get(option.photo_id);
+          
+          if (img && img.complete && img.naturalWidth > 0) {
+            // Calculate dimensions maintaining aspect ratio using random size
+            const aspectRatio = img.naturalWidth / img.naturalHeight;
+            let drawWidth, drawHeight;
+            if (aspectRatio > 1) {
+              drawWidth = randomSize;
+              drawHeight = randomSize / aspectRatio;
+            } else {
+              drawWidth = randomSize * aspectRatio;
+              drawHeight = randomSize;
+            }
+            
+            // Check hover (only on image, not text)
+            const centerX = x;
+            const centerY = y;
+            const hovered = Math.hypot(mouseX - centerX, mouseY - centerY) < Math.max(drawWidth, drawHeight) / 2;
+            
+            // Scale up when hovered
+            const hoverScale = hovered ? 1.15 : 1.0;
+            const scaledWidth = drawWidth * hoverScale;
+            const scaledHeight = drawHeight * hoverScale;
+            
+            // Add glow effect when hovered
+            if (hovered) {
+              ctx.shadowBlur = 20;
+              ctx.shadowColor = 'rgba(255, 255, 255, 0.6)';
+            }
+            
+            ctx.drawImage(
+              img,
+              centerX - scaledWidth / 2,
+              centerY - scaledHeight / 2,
+              scaledWidth,
+              scaledHeight
+            );
+            
+            ctx.shadowBlur = 0;
+          }
+        });
+      }
+    }
+
+    function drawHumanMousePointer() {
+      if (!gameStarted || endAnimation) {
+        // Show revelation screen if needed
+        if (showRevelation) {
+          drawRevelationScreen();
+        }
+        return;
+      }
+      
+      ctx.save();
+      
+      const rect = canvas.getBoundingClientRect();
+      const x = mousePos.x - rect.left;
+      const y = mousePos.y - rect.top;
+      
+      // Constrain cursor position to stay within canvas bounds
+      const cursorSize = 24;
+      const margin = cursorSize / 2;
+      const constrainedX = Math.max(margin, Math.min(width - margin, x));
+      const constrainedY = Math.max(margin, Math.min(height - margin, y));
+      
+      // Draw bullet pointer for human player
+      ctx.font = '24px Arial';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#000000';
+      ctx.fillText('●', constrainedX, constrainedY);
+      
+      ctx.restore();
+    }
+
+
+    function drawUI() {
+      if (!gameState || gameState.game_complete) return;
+
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'center';
+
+      const uiSize = Math.max(10, Math.min(24, Math.floor(width / 75)));
+      const smallSize = Math.max(8, Math.min(16, Math.floor(width / 100)));
+
+      // Draw click counter at top center
+      ctx.font = `${uiSize}px "Press Start 2P", monospace`;
+      ctx.fillText(`${15 - gameState.human_steps} / 15`, width / 2, 40);
+      
+      // Prompt is drawn in drawPhotoOptions below the images
+    }
+
+    function drawGame() {
+      if (!gameState) return;
+
+      // Transparent background - grid shows through
+
+      drawPhotoOptions();
+      drawHumanMousePointer();
+      drawUI();
+      
+      // Draw surreal statement at bottom center (non-interactive)
+      if (gameState && gameState.human_current_options && gameState.human_current_options.length > 0 && gameState.current_prompt) {
+        const smallSize = Math.max(10, Math.min(18, Math.floor(width / 90)));
+        ctx.fillStyle = '#000000';
+        ctx.font = `${smallSize}px "Press Start 2P", monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(gameState.current_prompt, width / 2, height - 40);
+      }
+    }
+
+    // Image generation progress
+    let generationProgress = 0;
+    let generationComplete = false;
+    let generationProgressComplete = false; // Track when 100% is reached
+    let progressCompleteTime = 0; // Time when 100% was reached
+    let intuitionWorldData = null;
+    let dominantColor = { r: 150, g: 150, b: 150 };
+    
+    // Selection history ticker animation
+    let tickerScrollX = 0;
+    let tickerSpeed = 1; // pixels per frame
+
+    function drawCollage() {
+      if (!gameState) return;
+
+      // Transparent background - grid shows through
+
+      const labelSize = Math.max(10, Math.min(16, Math.floor(width / 110)));
+      ctx.fillStyle = '#000000';
+      ctx.font = `${labelSize}px "Press Start 2P", monospace`;
+      ctx.textAlign = 'center';
+
+      // Draw Memory Collage on the LEFT side
+      if (humanCollage && humanCollage.length > 0) {
+        humanCollage.forEach(item => {
+          let x = scaleX(item.x);
+          let y = scaleY(item.y);
+          const size = item.size * (width / BASE_W);
+          
+          // Constrain position to ensure image doesn't overflow boundaries
+          const img = imageCache.get(item.photo_id);
+          if (img && img.complete && img.naturalWidth > 0) {
+            const constrained = constrainPositionToBoundaries(x, y, img, 'human');
+            x = constrained.x;
+            y = constrained.y;
+          }
+          
+          // Use the stored size from selection (same size as when selected)
+          const useOriginal = item.use_original_size !== false;
+          drawPhoto(item.photo_id, x, y, size, item.rotation, false, useOriginal);
+        });
+        ctx.fillText('INTUITION COLLAGE', width / 4, 40);
+      }
+
+      // Calculate left margin (distance from left edge to left edge of collage)
+      // Left collage center is at width/4, grid width is 300 (3 columns * 100px)
+      // Left edge of grid: width/4 - 150
+      const leftMargin = width / 4 - 150;
+      
+      // Fixed poem width for easier calculation and consistent layout
+      const fixedPoemWidth = 280; // Fixed width in pixels
+      const poemSpacing = 20; // Spacing between grid and poem
+      
+      // Calculate right center position to match left margin
+      // We want: right edge of poem to right edge = left margin
+      // poem right edge = textX + fixedPoemWidth
+      // textX = worldX + worldGridWidth + poemSpacing = rightCenterX - 150 + 300 + poemSpacing = rightCenterX + 150 + poemSpacing
+      // So: width - (rightCenterX + 150 + poemSpacing + fixedPoemWidth) = leftMargin
+      // rightCenterX = width - leftMargin - 150 - poemSpacing - fixedPoemWidth
+      // Adjust slightly to the right to match visual left margin better
+      const rightMarginAdjustment = 30; // Adjust to match visual appearance
+      const rightCenterX = width - leftMargin - 150 - poemSpacing - fixedPoemWidth + rightMarginAdjustment;
+      
+      // Calculate grid size similar to memory collage (3 columns x 5 rows)
+      const photosPerRow = 3;
+      const cellSize = 100; // Same as memory collage
+      const spacing = 0; // No space between items
+      const padding = 40;
+      const totalWidth = photosPerRow * cellSize + (photosPerRow - 1) * spacing;
+      const totalHeight = 5 * cellSize + (5 - 1) * spacing; // 5 rows
+      
+      // Draw label
+      ctx.fillText('INTUITION POETRY', rightCenterX, 40);
+      
+      // Calculate world rectangle position and size (same as memory collage grid)
+      // Position it lower to have space between text and rectangle
+      const worldGridWidth = totalWidth;
+      const worldGridHeight = totalHeight;
+      const worldX = rightCenterX - worldGridWidth / 2;
+      const worldY = padding + 60; // Slightly higher position
+      
+      // Draw progress indicator (only show if not complete or within 1 second of completion)
+      const currentTime = performance.now();
+      const showProgress = !generationProgressComplete || (currentTime - progressCompleteTime < 1000);
+      
+      if (showProgress && !generationComplete) {
+        // Show "Generating..." text first
+        ctx.font = `${Math.max(8, Math.min(14, Math.floor(width / 120)))}px "Press Start 2P", monospace`;
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'center';
+        const generatingY = worldY + worldGridHeight / 2 - 30;
+        ctx.fillText('GENERATING...', rightCenterX, generatingY);
+        
+        // Progress bar below "GENERATING" text
+        const progressBarWidth = worldGridWidth - 20;
+        const progressBarHeight = 20;
+        const progressBarX = rightCenterX - progressBarWidth / 2;
+        const progressBarY = generatingY + 25; // Below "GENERATING" text
+        
+        // Background bar
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.fillRect(progressBarX, progressBarY, progressBarWidth, progressBarHeight);
+        
+        // Progress bar with dominant color gradient (non-transparent)
+        const gradient = ctx.createLinearGradient(progressBarX, progressBarY, progressBarX + progressBarWidth, progressBarY);
+        gradient.addColorStop(0, `rgb(${dominantColor.r}, ${dominantColor.g}, ${dominantColor.b})`);
+        gradient.addColorStop(1, `rgb(${Math.max(0, dominantColor.r - 50)}, ${Math.max(0, dominantColor.g - 50)}, ${Math.max(0, dominantColor.b - 50)})`);
+        ctx.fillStyle = gradient;
+        ctx.fillRect(progressBarX, progressBarY, progressBarWidth * (generationProgress / 100), progressBarHeight);
+        
+        // Progress text (below the bar)
+        ctx.font = `${Math.max(8, Math.min(14, Math.floor(width / 120)))}px "Press Start 2P", monospace`;
+        ctx.fillStyle = '#000000';
+        ctx.fillText(`${Math.floor(generationProgress)}%`, rightCenterX, progressBarY + progressBarHeight + 20);
+      }
+      
+      // Draw generated world placeholder (or actual image when complete)
+      if (generationComplete) {
+        // Generate random pastel gradient colors if not already generated for this game
+        if (!intuitionWorldGradientColors) {
+          intuitionWorldGradientColors = generateRandomPastelGradient();
+        }
+        
+        // Create smooth pastel gradient background
+        const bgGradient = ctx.createLinearGradient(
+          worldX, worldY,
+          worldX + worldGridWidth, worldY + worldGridHeight
+        );
+        
+        // Add color stops from generated gradient
+        intuitionWorldGradientColors.forEach(color => {
+          bgGradient.addColorStop(color.stop, `rgba(${color.r}, ${color.g}, ${color.b}, 0.95)`);
+        });
+        
+        ctx.fillStyle = bgGradient;
+        ctx.fillRect(worldX, worldY, worldGridWidth, worldGridHeight);
+        
+        // Show the 4 selected images with surreal collage effects
+        if (intuitionWorldData && intuitionWorldData.selected_images && intuitionWorldData.selected_images.length > 0) {
+          const padding = 20;
+          const minSize = 100;
+          const maxSize = 180;
+          
+          // Calculate static positions once (only if not already calculated)
+          if (!intuitionWorldImageConfigs) {
+            intuitionWorldImageConfigs = [];
+            
+            intuitionWorldData.selected_images.forEach((photoItem, index) => {
+              // Extract photo_id from the item
+              const photoId = typeof photoItem === 'string' ? photoItem : (photoItem.photo_id || photoItem);
+              const img = imageCache.get(photoId);
+              if (img && img.complete && img.naturalWidth > 0) {
+                // Varied sizes for dynamic composition
+                const baseSize = minSize + (index * 25) + (index % 2 === 0 ? 20 : 0);
+                const aspectRatio = img.naturalWidth / img.naturalHeight;
+                
+                let imgWidth, imgHeight;
+                if (aspectRatio > 1) {
+                  imgWidth = Math.min(baseSize, maxSize);
+                  imgHeight = Math.min(baseSize, maxSize) / aspectRatio;
+                } else {
+                  imgWidth = Math.min(baseSize, maxSize) * aspectRatio;
+                  imgHeight = Math.min(baseSize, maxSize);
+                }
+                
+                // More dynamic positioning (not just corners)
+                let imgX, imgY;
+                const centerX = worldX + worldGridWidth / 2;
+                const centerY = worldY + worldGridHeight / 2;
+                
+                if (index === 0) {
+                  // Top-left, slightly offset
+                  imgX = worldX + padding + 30;
+                  imgY = worldY + padding + 20;
+                } else if (index === 1) {
+                  // Top-right, overlapping center
+                  imgX = centerX - imgWidth * 0.3;
+                  imgY = worldY + padding + 40;
+                } else if (index === 2) {
+                  // Bottom-left, near center
+                  imgX = worldX + padding + 50;
+                  imgY = centerY - imgHeight * 0.2;
+                } else {
+                  // Bottom-right, overlapping
+                  imgX = worldX + worldGridWidth - padding - imgWidth - 30;
+                  imgY = worldY + worldGridHeight - padding - imgHeight - 20;
+                }
+                
+                // Ensure images stay within bounds
+                imgX = Math.max(worldX + padding, Math.min(imgX, worldX + worldGridWidth - imgWidth - padding));
+                imgY = Math.max(worldY + padding, Math.min(imgY, worldY + worldGridHeight - imgHeight - padding));
+                
+                // Varied rotations for dynamic feel
+                const rotations = [-18, 12, -8, 22];
+                const rotation = (rotations[index] || 0) * Math.PI / 180;
+                
+                // Opacity variations for layering effect
+                const opacity = 0.85 + (index * 0.05);
+                
+                intuitionWorldImageConfigs.push({
+                  photoId: photoId,
+                  img: img,
+                  x: imgX,
+                  y: imgY,
+                  width: imgWidth,
+                  height: imgHeight,
+                  rotation: rotation,
+                  opacity: opacity,
+                  zIndex: index
+                });
+              }
+            });
+            
+            // Sort by z-index to draw back to front
+            intuitionWorldImageConfigs.sort((a, b) => a.zIndex - b.zIndex);
+          }
+          
+          // Draw each image with surreal collage effects
+          intuitionWorldImageConfigs.forEach((config) => {
+            ctx.save();
+            
+            const centerX = config.x + config.width / 2;
+            const centerY = config.y + config.height / 2;
+            
+            // Set opacity for layering
+            ctx.globalAlpha = config.opacity;
+            
+            // Draw the image with rotation
+            ctx.translate(centerX, centerY);
+            ctx.rotate(config.rotation);
+            
+            // Draw the image
+            ctx.drawImage(
+              config.img,
+              -config.width / 2,
+              -config.height / 2,
+              config.width,
+              config.height
+            );
+            
+            ctx.restore();
+          });
+          
+          // Draw poem generated by Python backend (from intuitionWorldData.generated_poem)
+          if (intuitionWorldData && intuitionWorldData.generated_poem && intuitionWorldData.generated_poem.length > 0) {
+            ctx.save();
+            ctx.fillStyle = '#000000';
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'top';
+            const textSize = Math.max(8, Math.min(12, Math.floor(width / 150)));
+            ctx.font = `${textSize}px "Press Start 2P", monospace`;
+            
+            // Position text to the right of the rectangle
+            const textX = worldX + worldGridWidth + poemSpacing; // Fixed spacing from rectangle
+            const textStartY = worldY + 10; // Start a bit below the top
+            const lineHeight = textSize + 8; // Line spacing for poem
+            
+            // Draw poem (generated by Python backend using Markov chain)
+            // Use fixed width for consistent layout
+            let currentY = textStartY;
+            intuitionWorldData.generated_poem.forEach((line) => {
+              // Wrap long lines to fixed width
+              const words = line.split(' ');
+              let currentLine = '';
+              
+              words.forEach((word) => {
+                const testLine = currentLine + (currentLine ? ' ' : '') + word;
+                const metrics = ctx.measureText(testLine);
+                
+                if (metrics.width > fixedPoemWidth && currentLine) {
+                  // Draw current line and start new one
+                  ctx.fillText(currentLine, textX, currentY);
+                  currentLine = word;
+                  currentY += lineHeight;
+                } else {
+                  currentLine = testLine;
+                }
+              });
+              
+              // Draw remaining line
+              if (currentLine) {
+                ctx.fillText(currentLine, textX, currentY);
+                currentY += lineHeight;
+              }
+            });
+            
+            // Draw "To learn more" button under the poem
+            const buttonY = currentY + 30;
+            const buttonText = 'To learn more';
+            const buttonTextSize = Math.max(8, Math.min(12, Math.floor(width / 150)));
+            
+            // Check if mouse is hovering over button
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = mousePos.x - rect.left;
+            const mouseY = mousePos.y - rect.top;
+            const buttonWidth = ctx.measureText(buttonText).width;
+            const buttonHeight = buttonTextSize + 10;
+            const isHovered = mouseX >= textX && mouseX <= textX + buttonWidth &&
+                             mouseY >= buttonY - buttonHeight && mouseY <= buttonY + 5;
+            
+            ctx.font = `bold ${buttonTextSize}px "Press Start 2P", monospace`;
+            ctx.textAlign = 'left';
+            
+            // Add hover effect (scale and glow similar to images)
+            if (isHovered) {
+              ctx.save();
+              // Add glow effect
+              ctx.shadowBlur = 20;
+              ctx.shadowColor = 'rgba(255, 255, 255, 0.6)';
+              // Slightly scale up
+              ctx.translate(textX, buttonY);
+              ctx.scale(1.1, 1.1);
+              ctx.fillStyle = '#000000';
+              ctx.fillText(buttonText, 0, 0);
+              ctx.restore();
+            } else {
+              // Normal state with shadow
+              ctx.shadowBlur = 8;
+              ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+              ctx.fillStyle = '#000000';
+              ctx.fillText(buttonText, textX, buttonY);
+              ctx.shadowBlur = 0; // Reset shadow
+            }
+            
+            ctx.restore();
+          }
+        }
+      }
+      
+      // Draw Selection History Log at the bottom (end phase only)
+      drawSelectionHistoryLog();
+    }
+    
+    function drawRevelationScreen() {
+      // Transparent background - grid shows through
+      revelationAnimationFrame++;
+      
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      
+      const centerX = width / 2;
+      const centerY = height / 2;
+      
+      const textSize = Math.max(10, Math.min(18, Math.floor(width / 120)));
+      const promptSize = Math.max(8, Math.min(14, Math.floor(width / 150)));
+      
+      // Draw revelation text with typewriter effect (same as welcome screen)
+      const fullText = "Intuition is as unfathomable as this poem\nWe sought to grasp it, but it remains a pure abstraction—just like this art itself";
+      const lines = fullText.split('\n');
+      
+      // Typewriter effect: show characters progressively (very slow for realism)
+      const charsPerFrame = 0.15; // Same speed as welcome screen
+      const totalChars = fullText.replace(/\n/g, '').length;
+      const currentChars = Math.min(totalChars, Math.floor(revelationAnimationFrame * charsPerFrame));
+      
+      // Calculate which line and character we're on (including newlines in count)
+      let charsShown = 0;
+      let displayText = '';
+      
+      for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+        const line = lines[lineIndex];
+        const lineLength = line.length;
+        
+        if (charsShown + lineLength <= currentChars) {
+          // Whole line is shown
+          displayText += line;
+          if (lineIndex < lines.length - 1) {
+            displayText += '\n';
+          }
+          charsShown += lineLength;
+        } else {
+          // Partial line - show only the characters that should be visible
+          const remainingChars = currentChars - charsShown;
+          if (remainingChars > 0) {
+            displayText += line.substring(0, remainingChars);
+          }
+          break;
+        }
+      }
+      
+      // Draw the text with typewriter effect
+      ctx.fillStyle = '#000000';
+      ctx.font = `${textSize}px "Press Start 2P", monospace`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const lineHeight = textSize * 1.5;
+      const textY = centerY - 30; // Start position
+      
+      // Draw each line, even if partially complete
+      const displayLines = displayText.split('\n');
+      displayLines.forEach((line, index) => {
+        // Draw the line even if it's empty (to maintain spacing), but only if we've started typing
+        if (currentChars > 0 || index === 0) {
+          ctx.fillText(line || '', centerX, textY + (index * lineHeight));
+        }
+      });
+      
+      // Draw "Press → to repeat the experience" button only when text is complete (very slow blinking)
+      if (currentChars >= totalChars) {
+        const blink = Math.sin(frameCount * 0.04) * 0.5 + 0.5; // Very slow blink
+        ctx.fillStyle = `rgba(0, 0, 0, ${blink})`;
+        ctx.font = `${promptSize}px "Press Start 2P", monospace`;
+        ctx.fillText('press → to repeat the experience', centerX, centerY + 100);
+        ctx.fillStyle = '#000000'; // Reset
+      }
+    }
+    
+    function drawSelectionHistoryLog() {
+      if (!gameState || !gameState.human_chosen_prompts) return;
+      
+      // Only show at game end, not during gameplay
+      if (!gameState.game_complete) return;
+      
+      // Update ticker scroll position (scroll from right to left)
+      tickerScrollX -= tickerSpeed;
+      
+      const thumbnailSize = 30;
+      const textPadding = 8;
+      const minItemSpacing = 20; // Minimum space between items
+      
+      // Use a fixed baseline for all items to ensure horizontal alignment
+      const baselineY = height - thumbnailSize - 1; // Position feed very close to bottom of screen
+      const logY = baselineY; // Keep for compatibility
+      
+      ctx.font = `${Math.max(6, Math.min(10, Math.floor(width / 180)))}px "Press Start 2P", monospace`;
+      ctx.fillStyle = '#000000';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle'; // Use middle baseline for text alignment
+      
+      // Calculate item widths to prevent overlap
+      const itemData = gameState.human_chosen_prompts.map((item, index) => {
+          const img = imageCache.get(item.photo_id);
+        let thumbWidth = thumbnailSize;
+        let thumbHeight = thumbnailSize;
+        
+          if (img && img.complete && img.naturalWidth > 0) {
+          const aspectRatio = img.naturalWidth / img.naturalHeight;
+          if (aspectRatio > 1) {
+            thumbWidth = thumbnailSize;
+            thumbHeight = thumbnailSize / aspectRatio;
+          } else {
+            thumbWidth = thumbnailSize * aspectRatio;
+            thumbHeight = thumbnailSize;
+          }
+        }
+        
+        // Measure text width
+        const textWidth = ctx.measureText(item.prompt).width;
+        const totalWidth = thumbWidth + textPadding + textWidth;
+        
+        return {
+          item: item,
+          thumbWidth: thumbWidth,
+          thumbHeight: thumbHeight,
+          textWidth: textWidth,
+          totalWidth: totalWidth
+        };
+      });
+      
+      // Calculate cumulative positions to prevent overlap (relative positions)
+      let currentX = 0;
+      const itemPositions = itemData.map((data, index) => {
+        const relativeX = currentX;
+        currentX += data.totalWidth + minItemSpacing;
+        return { ...data, relativeX: relativeX };
+      });
+      
+      // Calculate total width for seamless looping
+      const totalWidth = currentX - minItemSpacing;
+      
+      // Set initial position if not set
+      if (tickerScrollX === 0 && gameState.human_chosen_prompts.length > 0) {
+        tickerScrollX = width; // Start from right edge
+      }
+      
+      // Calculate the end position of the current feed
+      const feedEndX = tickerScrollX + totalWidth; // Rightmost edge of last item
+      
+      // Draw multiple copies of the feed for continuous scrolling
+      // We need to draw enough copies to cover the screen and ensure seamless looping
+      // Calculate which copy indices we need to draw
+      const loopSpacing = totalWidth + minItemSpacing;
+      
+      // Find the first copy that should be visible (starting from left)
+      const firstVisibleCopy = Math.floor((0 - tickerScrollX) / loopSpacing);
+      // Find the last copy that should be visible (ending at right)
+      const lastVisibleCopy = Math.ceil((width - tickerScrollX) / loopSpacing);
+      
+      // Draw all visible copies
+      for (let copyIndex = firstVisibleCopy - 1; copyIndex <= lastVisibleCopy + 1; copyIndex++) {
+        const baseX = tickerScrollX + (copyIndex * loopSpacing);
+        const copyEndX = baseX + totalWidth;
+        
+        // Only draw this copy if any part of it is visible
+        if (copyEndX < -50 || baseX > width + 50) continue;
+        
+        // Draw all items in this copy
+        itemPositions.forEach((pos) => {
+          const x = baseX + pos.relativeX;
+          
+          // Only draw if item is within visible area
+          if (x + pos.totalWidth < -100 || x > width + 100) return;
+          
+          // Draw thumbnail - center vertically on baseline
+          const img = imageCache.get(pos.item.photo_id);
+          if (img && img.complete && img.naturalWidth > 0) {
+            // Center thumbnail vertically on baseline
+            const thumbY = baselineY - pos.thumbHeight / 2;
+            ctx.drawImage(img, x, thumbY, pos.thumbWidth, pos.thumbHeight);
+          }
+          
+          // Draw prompt text next to thumbnail - align to same baseline
+          ctx.fillText(pos.item.prompt, x + pos.thumbWidth + textPadding, baselineY);
+        });
+      }
+      
+      // Reset scroll position for precision only when the END of a feed copy has passed far enough
+      // This prevents floating point precision issues but doesn't affect the visual loop
+      // We reset based on the END position, not the START
+      if (feedEndX < -loopSpacing) {
+        tickerScrollX += loopSpacing;
+      }
+    }
+
+    // =========================
+    // Input
+    // =========================
+    let mousePos = { x: 0, y: 0 };
+    canvas.addEventListener('mousemove', (e) => {
+      mousePos.x = e.clientX;
+      mousePos.y = e.clientY;
+    });
+
+    // Player name input handlers removed - no longer needed
+
+    canvas.addEventListener('click', async (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const xCss = e.clientX - rect.left;
+      const yCss = e.clientY - rect.top;
+
+      console.log('Canvas clicked:', { xCss, yCss, gameStarted, endAnimation, hasGameState: !!gameState });
+
+      if (!gameStarted) {
+        // Check if typing animation is complete before allowing to continue
+        const fullText = "Logic is powerless here. Choose the image that resonates with the phrase below.\nYour intuition will build an automatic collage, and AI will transform\nyour choices into a poem that will help understand your intuition";
+        const totalChars = fullText.replace(/\n/g, '').length;
+        const charsPerFrame = 0.15;
+        const currentChars = Math.min(totalChars, Math.floor(welcomeAnimationFrame * charsPerFrame));
+        
+        if (currentChars >= totalChars) {
+          // Text is complete, start the game
+          playClickSound(); // Play click sound
+          await startGame();
+        }
+        return;
+      }
+
+      if (!endAnimation && gameState && gameState.human_current_options && gameState.human_current_options.length > 0) {
+        // Check if click is on a selection image at random positions
+        // Don't trigger if clicking on text area (bottom of screen)
+        if (yCss > height - 80) {
+          return; // Text area at bottom, ignore clicks
+        }
+        
+        console.log('Checking click on images:', { xCss, yCss, optionsCount: gameState.human_current_options.length });
+        
+        for (let index = 0; index < gameState.human_current_options.length; index++) {
+          const option = gameState.human_current_options[index];
+          // Use the random position and size from backend
+          const x = scaleX(option.x);
+          const y = scaleY(option.y);
+          const randomSize = option.size || 120;
+          const img = imageCache.get(option.photo_id);
+          
+          // Calculate dimensions using stored random size
+          let drawWidth, drawHeight;
+          if (img && img.complete && img.naturalWidth > 0) {
+            const aspectRatio = img.naturalWidth / img.naturalHeight;
+            if (aspectRatio > 1) {
+              drawWidth = randomSize;
+              drawHeight = randomSize / aspectRatio;
+            } else {
+              drawWidth = randomSize * aspectRatio;
+              drawHeight = randomSize;
+            }
+          } else {
+            // Use estimated dimensions if image not loaded
+            drawWidth = randomSize;
+            drawHeight = randomSize;
+          }
+          
+          const centerX = x;
+          const centerY = y;
+          
+          // Use rectangular hitbox for more forgiving click detection
+          const halfWidth = drawWidth / 2;
+          const halfHeight = drawHeight / 2;
+          const left = centerX - halfWidth;
+          const right = centerX + halfWidth;
+          const top = centerY - halfHeight;
+          const bottom = centerY + halfHeight;
+          
+          // Check if click is within the rectangular bounds (with some padding)
+          const padding = 10; // Extra padding for easier clicking
+          const isWithinBounds = xCss >= (left - padding) && xCss <= (right + padding) && 
+                                 yCss >= (top - padding) && yCss <= (bottom + padding);
+          
+          console.log(`Image ${index}:`, { 
+            centerX, centerY, 
+            left: left - padding, right: right + padding, 
+            top: top - padding, bottom: bottom + padding,
+            xCss, yCss,
+            isWithinBounds,
+            photoId: option.photo_id 
+          });
+          
+          if (isWithinBounds) {
+            console.log('Click detected on image:', option.photo_id);
+            await handlePhotoSelection(option.photo_id);
+            return; // Exit after handling selection
+          }
+        }
+      }
+      
+      // Check if click is on "To learn more" button (when game is complete)
+      if (endAnimation && gameState && gameState.game_complete && !showRevelation && generationComplete) {
+        if (intuitionWorldData && intuitionWorldData.generated_poem && intuitionWorldData.generated_poem.length > 0) {
+          // Calculate exact positions matching the drawing code (same logic as drawCollage)
+          const leftMargin = width / 4 - 150;
+          const fixedPoemWidth = 280; // Fixed width in pixels (same as drawing code)
+          const poemSpacing = 20; // Spacing between grid and poem
+          
+          // Calculate right center position to match left margin (with same adjustment)
+          const rightMarginAdjustment = 30; // Same adjustment as in drawCollage
+          const rightCenterX = width - leftMargin - 150 - poemSpacing - fixedPoemWidth + rightMarginAdjustment;
+          
+          const photosPerRow = 3;
+          const cellSize = 100;
+          const totalWidth = photosPerRow * cellSize;
+          const worldGridWidth = totalWidth;
+          const padding = 40;
+          const worldY = padding + 60;
+          const worldX = rightCenterX - worldGridWidth / 2;
+          const textX = worldX + worldGridWidth + poemSpacing; // Fixed spacing from rectangle
+          
+          const textSize = Math.max(8, Math.min(12, Math.floor(width / 150)));
+          const lineHeight = textSize + 8;
+          const textStartY = worldY + 10; // Start a bit below the top
+          
+          // Calculate button position (same as drawing code)
+          let currentY = textStartY;
+          ctx.font = `${textSize}px "Press Start 2P", monospace`;
+          
+          intuitionWorldData.generated_poem.forEach((line) => {
+            // Count wrapped lines (same logic as drawing, using fixed width)
+            const words = line.split(' ');
+            let currentLine = '';
+            
+            words.forEach((word) => {
+              const testLine = currentLine + (currentLine ? ' ' : '') + word;
+              const metrics = ctx.measureText(testLine);
+              
+              if (metrics.width > fixedPoemWidth && currentLine) {
+                currentLine = word;
+                currentY += lineHeight;
+              } else {
+                currentLine = testLine;
+              }
+            });
+            
+            if (currentLine) {
+              currentY += lineHeight;
+            }
+          });
+          
+          const buttonY = currentY + 30;
+          const buttonText = 'To learn more';
+          const buttonTextSize = Math.max(8, Math.min(12, Math.floor(width / 150)));
+          ctx.font = `${buttonTextSize}px "Press Start 2P", monospace`;
+          const buttonWidth = ctx.measureText(buttonText).width;
+          const buttonHeight = buttonTextSize + 10;
+          
+          // Check if click is within button bounds (with some padding for easier clicking)
+          const clickPadding = 5;
+          if (xCss >= textX - clickPadding && xCss <= textX + buttonWidth + clickPadding &&
+              yCss >= buttonY - buttonHeight - clickPadding && yCss <= buttonY + clickPadding) {
+            playClickSound();
+            showRevelation = true;
+            revelationAnimationFrame = 0; // Reset animation frame when showing revelation screen
+            return;
+          }
+        }
+      }
+      
+      // Check if click is on "Press → to repeat" button (on revelation screen)
+      if (showRevelation) {
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const promptText = 'press → to repeat the experience';
+        const promptSize = Math.max(8, Math.min(14, Math.floor(width / 150)));
+        ctx.font = `${promptSize}px "Press Start 2P", monospace`;
+        const textWidth = ctx.measureText(promptText).width;
+        const textY = centerY + 100;
+        const textHeight = promptSize + 10;
+        
+        if (xCss >= centerX - textWidth / 2 && xCss <= centerX + textWidth / 2 &&
+            yCss >= textY - textHeight && yCss <= textY) {
+          playClickSound();
+          // Reset everything and restart
+          showRevelation = false;
+          revelationAnimationFrame = 0; // Reset revelation animation
+          endAnimation = false;
+          gameStarted = false;
+          // CRITICAL: Reset welcome animation frame synchronously BEFORE any async operations
+          // This ensures the counter starts from 0 when the screen is next drawn
+          welcomeAnimationFrame = 0;
+          gameId = null;
+          gameState = null;
+          // Wait for next animation frame to ensure reset is applied before drawing
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          await initGame();
+          return;
+        }
+      }
+    });
+
+    document.addEventListener('keydown', async (e) => {
+      if (e.key === 'ArrowRight') {
+        if (!gameStarted) {
+          // Check if typing animation is complete before allowing to continue
+          const fullText = "Logic is powerless here. Choose the image that resonates with the phrase below.\nYour intuition will build an automatic collage, and AI will transform\nyour choices into a poem that will help understand your intuition";
+          const totalChars = fullText.replace(/\n/g, '').length;
+          const charsPerFrame = 0.15;
+          const currentChars = Math.min(totalChars, Math.floor(welcomeAnimationFrame * charsPerFrame));
+          
+          if (currentChars >= totalChars) {
+            // Text is complete, start the game
+            playClickSound();
+            await startGame();
+          }
+        } else if (showRevelation) {
+          // On revelation screen, arrow key restarts
+          playClickSound();
+          showRevelation = false;
+          revelationAnimationFrame = 0; // Reset revelation animation
+          endAnimation = false;
+          gameStarted = false;
+          // CRITICAL: Reset welcome animation frame synchronously BEFORE any async operations
+          // This ensures the counter starts from 0 when the screen is next drawn
+          welcomeAnimationFrame = 0;
+          gameId = null;
+          gameState = null;
+          // Wait for next animation frame to ensure reset is applied before drawing
+          await new Promise(resolve => requestAnimationFrame(resolve));
+          await initGame();
+        }
+      }
+    });
+
+    // =========================
+    // Loop
+    // =========================
+    let lastFrameTime = performance.now();
+    
+    async function gameLoop() {
+      frameCount++;
+      const currentTime = performance.now();
+      const deltaTime = (currentTime - lastFrameTime) / 1000; // Convert to seconds
+      lastFrameTime = currentTime;
+
+      ctx.clearRect(0, 0, width, height);
+
+      if (!gameStarted) {
+        drawSplashScreen();
+      } else if (showRevelation) {
+        drawRevelationScreen();
+      } else if (!endAnimation) {
+        drawGame();
+
+        // Check for game completion
+        if (gameState && gameState.game_complete && !endAnimation) {
+          endAnimation = true;
+          generationProgress = 0;
+          generationComplete = false;
+          generationProgressComplete = false;
+          progressCompleteTime = 0;
+          tickerScrollX = width; // Initialize ticker position to start from right
+          // Show cursor again when game ends
+          canvas.classList.remove('game-started');
+          // Reset gradient for new game
+          intuitionWorldGradientColors = null;
+        }
+      } else {
+        // Animate generation progress (slower, more realistic)
+        if (!generationComplete && generationProgress < 100) {
+          generationProgress += 0.15; // Slower increment for realistic progress
+          if (generationProgress >= 100) {
+            generationProgress = 100;
+            generationProgressComplete = true;
+            progressCompleteTime = performance.now();
+            // Wait 1 second before marking as complete
+            setTimeout(() => {
+              generationComplete = true;
+            }, 1000);
+          }
+        }
+        drawCollage();
+      }
+
+      requestAnimationFrame(gameLoop);
+    }
+
+    // =========================
+    // Init
+    // =========================
+    resizeCanvas();
+    initGame();
+    // Start game loop (only once)
+    gameLoop();
+  </script>
+</body>
+</html>
