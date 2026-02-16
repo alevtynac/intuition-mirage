@@ -42,7 +42,7 @@ An interactive art and poetry experience where intuition guides image selection,
 ## Installation
 
 1. Open VS Code or another IDE (VS Code is recommended option)
-2. Add working folder by cloning GitHub repository using this link:
+2. Add working folder by cloning GitHub repository using this link:<br>
 `https://github.com/alevtynac/intuition-mirage`
 3. Install Python dependencies by running the command below in Terminal Window into VS Code:
 ```bash
